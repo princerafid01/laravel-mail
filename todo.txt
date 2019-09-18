@@ -1,0 +1,3 @@
+todo Set resizable logo in plugin.js (Now commented out)
+todo fix sidenav lock issue
+todo add sms notification
