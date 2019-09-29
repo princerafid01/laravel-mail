@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Console;
-
+use App\console\Commands\collectMail;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        //
+        collectMail::class
     ];
 
     /**
