@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Migrations\Migration;
 
-class CreateAttachmentsTable extends Migration
+class CreateBlacklistMailsTable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,11 +13,9 @@ class CreateAttachmentsTable extends Migration
      */
     public function up()
     {
-        Schema::create('attachments', function (Blueprint $table) {
+        Schema::create('blacklist_mails', function (Blueprint $table) {
             $table->bigIncrements('id');
-            $table->integer('mail_id');
-            $table->text('attachment_name');
-            $table->text('storage_name');
+            $table->string('mail');
             $table->timestamps();
         });
     }
@@ -29,6 +27,6 @@ class CreateAttachmentsTable extends Migration
      */
     public function down()
     {
-        Schema::dropIfExists('attachments');
+        Schema::dropIfExists('blacklist_mails');
     }
 }

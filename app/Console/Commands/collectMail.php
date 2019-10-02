@@ -76,7 +76,7 @@ foreach($aFolder as $oFolder){
         if(!Mail::find($oMessage->getMessageNo())){
             
             Mail::create([
-                'id' => $oMessage->getMessageNo(),
+                'mail_id' => $oMessage->getMessageNo(),
                 'sender' => $oMessage->getFrom()[0]->mail,
                 'sender_name' => $oMessage->getFrom()[0]->personal,
                 'to' => $oMessage->getTo()[0]->mail,

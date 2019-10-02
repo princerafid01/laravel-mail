@@ -1,12 +1,23 @@
 <?php
 
 namespace App\Http\Controllers\Api;
+use App\Attachment;
+use App\BlacklistMail;
 use App\Http\Controllers\Controller;
 use App\Mail;
+use App\Mail\SendMail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail as RealMail;
+
 
 class MailController extends Controller
 {
+    public function __construct()
+    {
+        parent::__construct();
+        $this->middleware('jwt.auth');
+    }
     public function index()
     {
     	 
@@ -25,7 +36,7 @@ class MailController extends Controller
                 'bcc' => $mail->bcc ?? '',
                 'message' => $mail->message,
                 'attachments' => [],
-                'isStarred' => false,
+                'isStarred' => $mail->isStarred,
                 // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
                 'time' => date('D M d Y H:m:s O',strtotime($mail->time)),
                 'replies' => [],
@@ -125,6 +136,92 @@ class MailController extends Controller
     // Compose Mail
     public function sendMail(Request $request)
     {
-        return dd($request->all());
+        if ($request->mailCc) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->cc($request->mailCc)
+                                ->send(new SendMail($request));
+        }elseif ($request->mailBCC) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->bcc($request->mailBCC)
+                                ->send(new SendMail($request));
+        } elseif ($request->mailCc && $request->mailBCC) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->cc($request->mailCc)
+                                ->bcc($request->mailBCC)
+                                ->send(new SendMail($request));
+        } else{
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->send(new SendMail($request));
+        }
+
+        
+        $mail = Mail::create(
+        [
+                'sender' => Auth::user()->email,
+                'sender_name' => Auth::user()->name,
+                'to' => $request->mailTo,
+                'img' => 'avatar-s-1.png',
+                'subject' =>  $request->mailSubject,
+                'cc' => $request->mailCc ?? '',
+                'bcc' => $request->mailBCC ?? '',
+                'message' => $request->mailMessage,
+                'isStarred' => false,
+                'time' => date('D M d Y H:m:s O'),
+                'mailType' => 'sent',
+                'unread' => false,
+            ]); 
+        if($request->file){
+            foreach ($request->file as $vala) {
+                $attachment = Attachment::create([
+                    'mail_id' => $mail->id,
+                    'attachment_name' => $vala->getClientOriginalName(),
+                    'storage_name' => $vala->hashName()
+                ]);
+                $vala->store('public');
+            }
+        }
+        return response()->json(['status' => 200]);
+    }
+
+    public function mailStar(Request $request)
+    {
+        $mail = Mail::find($request->mailId)->update([
+            'isStarred' => $request->value
+        ]);
+        if ($mail) {
+            return response()->json(['status' => 200 ]);
+        }
+    }
+    public function mailUnread(Request $request)
+    {
+        foreach ($request->mails as $mail) {
+            Mail::find($mail)->update([
+                'unread' => $request->unread
+            ]);
+        }
+        return response()->json(['status' => 200 ]);
+
+    }
+
+    public function mailTrash(Request $request)
+    {
+        foreach ($request->mails as $mail) {
+            Mail::find($mail)->update([
+                'mailType' => 'trashed'
+            ]);
+        }
+        return response()->json(['status' => 200 ]);
+    }
+    public function mailSpam(Request $request)
+    {
+        foreach ($request->mails as $mail) {
+            Mail::find($mail)->update([
+                'mailType' => 'spam'
+            ]);
+            BlacklistMail::create([
+                'mail' => Mail::find($mail)->sender
+            ]);
+        }
+        return response()->json(['status' => 200 ]);
     }
 }
