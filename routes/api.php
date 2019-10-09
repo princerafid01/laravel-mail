@@ -55,12 +55,21 @@ Route::get('animation', function (){
     return view('animation');
 });
 // Mail
+Route::get('mails/{id}', 'Api\MailController@findMail');
 Route::get('test/email', 'Api\MailController@index');
 Route::get('test/email/2', 'Api\MailController@test');
 Route::get('mailRead/{id}', 'Api\MailController@updateMailRead');
 Route::post('sendMail', 'Api\MailController@sendMail');
 Route::post('mail/star', 'Api\MailController@mailStar');
+Route::post('draftMail', 'Api\MailController@draftMail');
+
 // Mail Flag
 Route::post('mail/markUnread', 'Api\MailController@mailUnread');
 Route::post('mail/markTrash', 'Api\MailController@mailTrash');
 Route::post('mail/markSpam', 'Api\MailController@mailSpam');
+Route::post('mail/markDraft', 'Api\MailController@mailDraft');
+
+Route::get('download_file/{file}', 'Api\MailController@download');
+Route::get('collect_mail', 'Api\MailController@collectMail');
+
+

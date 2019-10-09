@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Mail;
 use App\Mail\SendMail;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail as RealMail;
+use Illuminate\Support\Facades\Storage;
 
 
 class MailController extends Controller
@@ -16,15 +18,96 @@ class MailController extends Controller
     public function __construct()
     {
         parent::__construct();
-        $this->middleware('jwt.auth');
+        $this->middleware('jwt.auth',['except' => ['download','collectMail','test']]);
+    }
+
+    public function collectMail()
+    {
+        $oClient = \Webklex\IMAP\Facades\Client::account('default');
+        $mail_attachments =[];
+
+        //Connect to the IMAP Server
+        $oClient->connect();
+
+        //Get all Mailboxes
+        /** @var \Webklex\IMAP\Support\FolderCollection $aFolder */
+        $aFolder = $oClient->getFolders();
+        $a=[];
+        $b=[];
+        $mail = [];
+
+
+        //Loop through every Mailbox
+        /** @var \Webklex\IMAP\Folder $oFolder */
+        foreach($aFolder as $oFolder){
+
+        //Get all Messages of the current Mailbox $oFolder
+        /** @var \Webklex\IMAP\Support\MessageCollection $aMessage */
+        $aMessage = $oFolder->messages()->all()->get();
+        if ($oFolder->name == 'INBOX') {
+        $folder = 'inboxed';
+        } else {
+        $folder = $oFolder->name;
+        }
+        foreach($aMessage as $oMessage){
+        if(!Mail::where('mail_id',$oMessage->getMessageNo())->count() && !BlacklistMail::where('mail',$oMessage->getFrom()[0]->mail)->count()){
+
+        $mail = Mail::create([
+        'mail_id' => $oMessage->getMessageNo(),
+        'sender' => $oMessage->getFrom()[0]->mail,
+        'sender_name' => $oMessage->getFrom()[0]->personal,
+        'to' => $oMessage->getTo()[0]->mail,
+        'img' => 'avatar-s-1.png',
+        'subject' =>  $oMessage->getSubject(),
+        'cc' => $oMessage->getCc()[0] ?? '',
+        'bcc' => $oMessage->getBcc()[0] ?? '',
+        'message' => $oMessage->getTextBody(),
+        // 'attachments' => $a,
+        'isStarred' => false,
+        // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
+        'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
+        // 'replies' => [],
+        'mailType' => $folder,
+        'unread' => true,
+        // 'content' => $b
+        ]);
+        if($mail){
+        $oMessage->getAttachments()->each(function ($oAttachment) use ($oMessage,$mail) {
+        $oAttachment->save();
+        Attachment::create([
+        'mail_id' => $mail->id ,
+        'attachment_name' => $oAttachment->name ?? '',
+        'storage_name' => $oAttachment->name ?? ''
+        ]);
+        });
+        }     
+        } 
+        // elseif(Mail::where('mail_id',$oMessage->getMessageNo())->first()->message != $oMessage->getTextBody() ) {
+        //     Mail::where('mail_id',$oMessage->getMessageNo())->first()->update(
+        //         [
+        //             'message'  => $oMessage->getTextBody()
+        //         ]
+        //     );
+        // }
+        }
+        }
     }
     public function index()
     {
     	 
 // 
-        $mails = Mail::all();
+        $mails = Mail::with('attachments')->get();
         $all_m = [];
+        $all_attachments = [];
         foreach ($mails as $mail) {
+            // if (is_array($mail->attachments)) {
+            //     array_map(function($attachment){
+            //         $all_attachments[] = $attachment->attachment_name;
+            //     },$mail->attachments);
+            // }
+            // $mail->attachments->each(function($attachment){
+            //     $all_attachments[] = $attachment->attachment_name;
+            // });
         $all_m[] = [
             'id' => $mail->id,
                 'sender' => $mail->sender,
@@ -35,7 +118,7 @@ class MailController extends Controller
                 'cc' => $mail->cc ?? '',
                 'bcc' => $mail->bcc ?? '',
                 'message' => $mail->message,
-                'attachments' => [],
+                'attachments' => $mail->attachments,
                 'isStarred' => $mail->isStarred,
                 // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
                 'time' => date('D M d Y H:m:s O',strtotime($mail->time)),
@@ -56,7 +139,8 @@ class MailController extends Controller
         //Get all Mailboxes
         /** @var \Webklex\IMAP\Support\FolderCollection $aFolder */
         $aFolder = $oClient->getFolders();
-                    $a=[];
+                    $mail_attachments=[];
+                    $mail_attachments_name=[];
                     $b=[];
                     $mail = [];
                     
@@ -69,20 +153,31 @@ class MailController extends Controller
 
             //Get all Messages of the current Mailbox $oFolder
             /** @var \Webklex\IMAP\Support\MessageCollection $aMessage */
-            echo '<pre>';
-                var_dump($oFolder->name);
-            echo '</pre>';
+            
             $aMessage = $oFolder->messages()->all()->get();
+// echo '<pre>';
+//             foreach($aMessage->getAttachments()->items as $item){
+//             foreach($item->structure->parameters as $para){
+// echo '<pre>';
+// var_dump($para->value);
+//             echo '</pre>';
 
+//             }
+//             }
+            // echo '</pre>';
             
             /** @var \Webklex\IMAP\Message $oMessage */
             foreach($aMessage as $oMessage){
                 // var_dump($oMessage);
                 // $a =[];  
                 foreach ($oMessage->getAttachments() as $oAttachment) {
-                    $a[]=$oAttachment->getName();
+                    $mail_attachments[]=$oAttachment->getContent();
+                    $mail_attachments_name[]=$oAttachment->getName();
                     // readfile($file_url)
                 }
+                echo '<pre>';
+var_dump($oMessage->getInReplyTo());
+            echo '</pre>';
                 $mail[] =[
                     'id' => $oMessage->getMessageNo(),
             'sender' => $oMessage->getFrom()[0]->mail,
@@ -93,7 +188,7 @@ class MailController extends Controller
             'cc' => [$oMessage->getCc()[0] ?? ''],
             'bcc' => [$oMessage->getCc()[0] ?? ''],
             'message' => $oMessage->getBodies()['text']->content,
-            'attachments' => $a,
+            'attachments' => $mail_attachments,
             'isStarred' => false,
             'labels' => ['private'],
             // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
@@ -136,6 +231,10 @@ class MailController extends Controller
     // Compose Mail
     public function sendMail(Request $request)
     {
+        if ($request->replyTo) {
+            $mailable = new Mailable;
+            $mailable->replyTo($request->replyTo);
+        }
         if ($request->mailCc) {
             $sent_mail = RealMail::to($request->mailTo)
                                 ->cc($request->mailCc)
@@ -182,7 +281,46 @@ class MailController extends Controller
         }
         return response()->json(['status' => 200]);
     }
+// Compose Mail
+    public function draftMail(Request $request)
+    {
+        if ($request->mailCc) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->cc($request->mailCc)
+                                ->send(new SendMail($request));
+        }elseif ($request->mailBCC) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->bcc($request->mailBCC)
+                                ->send(new SendMail($request));
+        } elseif ($request->mailCc && $request->mailBCC) {
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->cc($request->mailCc)
+                                ->bcc($request->mailBCC)
+                                ->send(new SendMail($request));
+        } else{
+            $sent_mail = RealMail::to($request->mailTo)
+                                ->send(new SendMail($request));
+        }
 
+        
+            $mail = Mail::create(
+            [
+                    'sender' => Auth::user()->email,
+                    'sender_name' => Auth::user()->name,
+                    'to' => $request->mailTo,
+                    'img' => 'avatar-s-1.png',
+                    'subject' =>  $request->mailSubject,
+                    'cc' => $request->mailCc ?? '',
+                    'bcc' => $request->mailBCC ?? '',
+                    'message' => $request->mailMessage,
+                    'isStarred' => false,
+                    'time' => date('D M d Y H:m:s O'),
+                    'mailType' => 'drafted',
+                    'unread' => false,
+                ]); 
+            
+            return response()->json(['status' => 200]);
+        }
     public function mailStar(Request $request)
     {
         $mail = Mail::find($request->mailId)->update([
@@ -212,6 +350,17 @@ class MailController extends Controller
         }
         return response()->json(['status' => 200 ]);
     }
+
+    public function mailDraft(Request $request)
+    {
+        foreach ($request->mails as $mail) {
+            Mail::find($mail)->update([
+                'mailType' => 'drafted'
+            ]);
+        }
+        return response()->json(['status' => 200 ]);
+    }
+
     public function mailSpam(Request $request)
     {
         foreach ($request->mails as $mail) {
@@ -223,5 +372,15 @@ class MailController extends Controller
             ]);
         }
         return response()->json(['status' => 200 ]);
+    }
+
+    public function download($file)
+    {
+        return Storage::disk('local_public')->download($file);
+    }
+
+    public function findMail($id)
+    {
+        return response()->json(Mail::find($id));
     }
 }
