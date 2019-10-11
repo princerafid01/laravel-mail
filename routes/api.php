@@ -61,8 +61,8 @@ Route::get('test/email/2', 'Api\MailController@test');
 Route::get('mailRead/{id}', 'Api\MailController@updateMailRead');
 Route::post('sendMail', 'Api\MailController@sendMail');
 Route::post('mail/star', 'Api\MailController@mailStar');
+Route::post('mail/delete', 'Api\MailController@mailDelete');
 Route::post('draftMail', 'Api\MailController@draftMail');
-
 // Mail Flag
 Route::post('mail/markUnread', 'Api\MailController@mailUnread');
 Route::post('mail/markTrash', 'Api\MailController@mailTrash');

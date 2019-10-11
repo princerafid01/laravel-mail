@@ -11,15 +11,17 @@ class SendMail extends Mailable
 {
     use Queueable, SerializesModels;
     public $data;
+    public $fromMail;
 
     /**
      * Create a new message instance.
      *
      * @return void
      */
-    public function __construct($data)
+    public function __construct($data,$fromMail)
     {
         $this->data = $data;
+        $this->fromMail = $fromMail;
     }
 
     /**
@@ -30,6 +32,7 @@ class SendMail extends Mailable
     public function build()
     {
         $email = $this->view('mail.mail');
+        $email->from($this->fromMail);
         // $attachments =[];
         if($this->data->file){
             foreach ($this->data->file as $vala) {

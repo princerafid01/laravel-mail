@@ -17,6 +17,7 @@ class CreateMailsTable extends Migration
             $table->bigIncrements('id');
             $table->integer('mail_id')->nullable();
             $table->integer('parent_id')->nullable();
+            $table->string('mail');
             $table->string('sender');
             $table->string('sender_name');
             $table->string('img');
@@ -29,6 +30,7 @@ class CreateMailsTable extends Migration
             $table->text('time');
             $table->string('mailType');
             $table->boolean('unread');
+            $table->boolean('deleted')->nullable();
             $table->timestamps();
         });
     }

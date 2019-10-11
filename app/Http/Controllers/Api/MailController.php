@@ -6,11 +6,16 @@ use App\BlacklistMail;
 use App\Http\Controllers\Controller;
 use App\Mail;
 use App\Mail\SendMail;
+use App\User;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Mailable;
+use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail as RealMail;
 use Illuminate\Support\Facades\Storage;
+use Webklex\IMAP\Facades\Client;
 
 
 class MailController extends Controller
@@ -23,109 +28,165 @@ class MailController extends Controller
 
     public function collectMail()
     {
-        $oClient = \Webklex\IMAP\Facades\Client::account('default');
-        $mail_attachments =[];
+        $users = User::all();
+        foreach ($users as $user) {
 
-        //Connect to the IMAP Server
-        $oClient->connect();
+            
+            // $oClient = \Webklex\IMAP\Facades\Client::account('default');
+            $oClient = new \Webklex\IMAP\Client([
+                'host'          => 'sg3plcpnl0071.prod.sin3.secureserver.net',
+                'port'          => 993,
+                'encryption'    => 'ssl',
+                'validate_cert' => true,
+                'username'      => $user->email,
+                'password'      => $user->email_password,
+                'protocol'      => 'imap'
+            ]);
+            $mail_attachments =[];
 
-        //Get all Mailboxes
-        /** @var \Webklex\IMAP\Support\FolderCollection $aFolder */
-        $aFolder = $oClient->getFolders();
-        $a=[];
-        $b=[];
-        $mail = [];
+            //Connect to the IMAP Server
+            $oClient->connect();
+
+            //Get all Mailboxes
+            /** @var \Webklex\IMAP\Support\FolderCollection $aFolder */
+            $aFolder = $oClient->getFolders();
+            $a=[];
+            $b=[];
+            $mail = [];
 
 
-        //Loop through every Mailbox
-        /** @var \Webklex\IMAP\Folder $oFolder */
-        foreach($aFolder as $oFolder){
+            //Loop through every Mailbox
+            /** @var \Webklex\IMAP\Folder $oFolder */
+            foreach($aFolder as $oFolder){
 
-        //Get all Messages of the current Mailbox $oFolder
-        /** @var \Webklex\IMAP\Support\MessageCollection $aMessage */
-        $aMessage = $oFolder->messages()->all()->get();
-        if ($oFolder->name == 'INBOX') {
-        $folder = 'inboxed';
-        } else {
-        $folder = $oFolder->name;
-        }
-        foreach($aMessage as $oMessage){
-        if(!Mail::where('mail_id',$oMessage->getMessageNo())->count() && !BlacklistMail::where('mail',$oMessage->getFrom()[0]->mail)->count()){
-
-        $mail = Mail::create([
-        'mail_id' => $oMessage->getMessageNo(),
-        'sender' => $oMessage->getFrom()[0]->mail,
-        'sender_name' => $oMessage->getFrom()[0]->personal,
-        'to' => $oMessage->getTo()[0]->mail,
-        'img' => 'avatar-s-1.png',
-        'subject' =>  $oMessage->getSubject(),
-        'cc' => $oMessage->getCc()[0] ?? '',
-        'bcc' => $oMessage->getBcc()[0] ?? '',
-        'message' => $oMessage->getTextBody(),
-        // 'attachments' => $a,
-        'isStarred' => false,
-        // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
-        'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
-        // 'replies' => [],
-        'mailType' => $folder,
-        'unread' => true,
-        // 'content' => $b
-        ]);
-        if($mail){
-        $oMessage->getAttachments()->each(function ($oAttachment) use ($oMessage,$mail) {
-        $oAttachment->save();
-        Attachment::create([
-        'mail_id' => $mail->id ,
-        'attachment_name' => $oAttachment->name ?? '',
-        'storage_name' => $oAttachment->name ?? ''
-        ]);
-        });
-        }     
-        } 
-        // elseif(Mail::where('mail_id',$oMessage->getMessageNo())->first()->message != $oMessage->getTextBody() ) {
-        //     Mail::where('mail_id',$oMessage->getMessageNo())->first()->update(
-        //         [
-        //             'message'  => $oMessage->getTextBody()
-        //         ]
-        //     );
-        // }
-        }
+            //Get all Messages of the current Mailbox $oFolder
+            /** @var \Webklex\IMAP\Support\MessageCollection $aMessage */
+            $aMessage = $oFolder->messages()->all()->get();
+            if ($oFolder->name == 'INBOX') {
+                $folder = 'inboxed';
+            } else {
+                $folder = $oFolder->name;
+            }
+            foreach($aMessage as $oMessage){
+                if(Mail::all()->count() == 0){
+                    $mail = Mail::create([
+                            'mail' => $user->email,
+                            'mail_id' => $oMessage->getMessageNo(),
+                            'sender' => $oMessage->getFrom()[0]->mail,
+                            'sender_name' => $oMessage->getFrom()[0]->personal,
+                            'to' => $oMessage->getTo()[0]->mail,
+                            'img' => 'avatar-s-1.png',
+                            'subject' =>  $oMessage->getSubject(),
+                            'cc' => $oMessage->getCc()[0] ?? '',
+                            'bcc' => $oMessage->getBcc()[0] ?? '',
+                            'message' => $oMessage->getTextBody(),
+                            'isStarred' => false,
+                            'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
+                            'mailType' => $folder,
+                            'unread' => true,
+                     ]);    
+                     if($mail){
+                            $oMessage->getAttachments()->each(function ($oAttachment) use ($oMessage,$mail) {
+                            $oAttachment->save();
+                            Attachment::create([
+                            'mail_id' => $mail->id ,
+                            'attachment_name' => $oAttachment->name ?? '',
+                            'storage_name' => $oAttachment->name ?? ''
+                            ]);
+                         });
+                      }  
+                    } elseif(!BlacklistMail::where('mail',$oMessage->getFrom()[0]->mail)->count()) {
+                        if(Mail::where('mail_id',$oMessage->getMessageNo())->count()){
+                            if(Mail::where('mail_id',$oMessage->getMessageNo())->first()->mail != $user->email){
+                                $mail = Mail::create([
+                                    'mail' => $user->email,
+                                    'mail_id' => $oMessage->getMessageNo(),
+                                    'sender' => $oMessage->getFrom()[0]->mail,
+                                    'sender_name' => $oMessage->getFrom()[0]->personal,
+                                    'to' => $oMessage->getTo()[0]->mail,
+                                    'img' => 'avatar-s-1.png',
+                                    'subject' =>  $oMessage->getSubject(),
+                                    'cc' => $oMessage->getCc()[0] ?? '',
+                                    'bcc' => $oMessage->getBcc()[0] ?? '',
+                                    'message' => $oMessage->getTextBody(),
+                                    'isStarred' => false,
+                                    'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
+                                    'mailType' => $folder,
+                                    'unread' => true,
+                                 ]);    
+                                 if($mail){
+                                        $oMessage->getAttachments()->each(function ($oAttachment) use ($oMessage,$mail) {
+                                        $oAttachment->save();
+                                        Attachment::create([
+                                        'mail_id' => $mail->id ,
+                                        'attachment_name' => $oAttachment->name ?? '',
+                                        'storage_name' => $oAttachment->name ?? ''
+                                        ]);
+                                     });
+                                  }  
+                            }
+                        }else{
+                                $mail = Mail::create([
+                                'mail' => $user->email,
+                                'mail_id' => $oMessage->getMessageNo(),
+                                'sender' => $oMessage->getFrom()[0]->mail,
+                                'sender_name' => $oMessage->getFrom()[0]->personal,
+                                'to' => $oMessage->getTo()[0]->mail,
+                                'img' => 'avatar-s-1.png',
+                                'subject' =>  $oMessage->getSubject(),
+                                'cc' => $oMessage->getCc()[0] ?? '',
+                                'bcc' => $oMessage->getBcc()[0] ?? '',
+                                'message' => $oMessage->getTextBody(),
+                                // 'attachments' => $a,
+                                'isStarred' => false,
+                                // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
+                                'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
+                                // 'replies' => [],
+                                'mailType' => $folder,
+                                'unread' => true,
+                                // 'content' => $b
+                            ]);    
+                              if($mail){
+                                    $oMessage->getAttachments()->each(function ($oAttachment) use ($oMessage,$mail) {
+                                    $oAttachment->save();
+                                    Attachment::create([
+                                    'mail_id' => $mail->id ,
+                                    'attachment_name' => $oAttachment->name ?? '',
+                                    'storage_name' => $oAttachment->name ?? ''
+                                    ]);
+                                 });
+                              }
+                        }
+                    }
+                }
+            }
         }
     }
     public function index()
     {
-    	 
-// 
-        $mails = Mail::with('attachments')->get();
+        $mails = Mail::with('attachments')->where('deleted',NULL)->get();
         $all_m = [];
         $all_attachments = [];
         foreach ($mails as $mail) {
-            // if (is_array($mail->attachments)) {
-            //     array_map(function($attachment){
-            //         $all_attachments[] = $attachment->attachment_name;
-            //     },$mail->attachments);
-            // }
-            // $mail->attachments->each(function($attachment){
-            //     $all_attachments[] = $attachment->attachment_name;
-            // });
-        $all_m[] = [
-            'id' => $mail->id,
-                'sender' => $mail->sender,
-                'sender_name' => $mail->sender_name,
-                'to' => $mail->to,
-                'img' => 'avatar-s-1.png',
-                'subject' =>  $mail->subject,
-                'cc' => $mail->cc ?? '',
-                'bcc' => $mail->bcc ?? '',
-                'message' => $mail->message,
-                'attachments' => $mail->attachments,
-                'isStarred' => $mail->isStarred,
-                // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
-                'time' => date('D M d Y H:m:s O',strtotime($mail->time)),
-                'replies' => [],
-                'mailType' => $mail->mailType,
-                'unread' => $mail->unread,
-            ];
+            if(Auth::user()->email == $mail->mail){
+                $all_m[] = [
+                   'id' => $mail->id,
+                    'sender' => $mail->sender,
+                    'sender_name' => $mail->sender_name,
+                    'to' => $mail->to,
+                    'img' => 'avatar-s-1.png',
+                    'subject' =>  $mail->subject,
+                    'cc' => $mail->cc ?? '',
+                    'bcc' => $mail->bcc ?? '',
+                    'message' => $mail->message,
+                    'attachments' => $mail->attachments,
+                    'isStarred' => $mail->isStarred,
+                    'time' => date('D M d Y H:m:s O',strtotime($mail->time)),
+                    'replies' => [],
+                    'mailType' => $mail->mailType,
+                    'unread' => $mail->unread,
+                ];
+            }
         }
         return response()->json($all_m);
 
@@ -180,39 +241,24 @@ var_dump($oMessage->getInReplyTo());
             echo '</pre>';
                 $mail[] =[
                     'id' => $oMessage->getMessageNo(),
-            'sender' => $oMessage->getFrom()[0]->mail,
-            'sender_name' => $oMessage->getFrom()[0]->personal,
-            'to' => [$oMessage->getTo()[0]->mail],
-            'img' => 'avatar-s-1.png',
-            'subject' =>  $oMessage->getSubject(),
-            'cc' => [$oMessage->getCc()[0] ?? ''],
-            'bcc' => [$oMessage->getCc()[0] ?? ''],
-            'message' => $oMessage->getBodies()['text']->content,
-            'attachments' => $mail_attachments,
-            'isStarred' => false,
-            'labels' => ['private'],
-            // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
-            'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
-            'replies' => [],
-            'mailType' => 'inboxed',
-            'unread' => false,
-            'content' => $b
+                    'sender' => $oMessage->getFrom()[0]->mail,
+                    'sender_name' => $oMessage->getFrom()[0]->personal,
+                    'to' => [$oMessage->getTo()[0]->mail],
+                    'img' => 'avatar-s-1.png',
+                    'subject' =>  $oMessage->getSubject(),
+                    'cc' => [$oMessage->getCc()[0] ?? ''],
+                    'bcc' => [$oMessage->getCc()[0] ?? ''],
+                    'message' => $oMessage->getBodies()['text']->content,
+                    'attachments' => $mail_attachments,
+                    'isStarred' => false,
+                    'labels' => ['private'],
+                    // Mon Dec 10 2018 07:46:00 GMT+0000 (GMT)
+                    'time' => date('D M d Y H:m:s O',strtotime($oMessage->getDate())),
+                    'replies' => [],
+                    'mailType' => 'inboxed',
+                    'unread' => false,
+                    'content' => $b
                 ];
-                // echo '<pre>';
-                
-                // dd($oMessage->getDate());
-                
-                // echo '</pre>';
-                // echo $oMessage->getSubject().'<br />';
-                // echo 'Attachments: '.$oMessage->getAttachments()->count().'<br />';
-                // echo $oMessage->getHTMLBody(true);
-                
-                //Move the current Message to 'INBOX.read'
-                // if($oMessage->moveToFolder('INBOX.read') == true){
-                //     echo 'Message has ben moved';
-                // }else{
-                //     echo 'Message could not be moved';
-                // }
             }
         }
     }
@@ -231,6 +277,7 @@ var_dump($oMessage->getInReplyTo());
     // Compose Mail
     public function sendMail(Request $request)
     {
+
         if ($request->replyTo) {
             $mailable = new Mailable;
             $mailable->replyTo($request->replyTo);
@@ -238,24 +285,25 @@ var_dump($oMessage->getInReplyTo());
         if ($request->mailCc) {
             $sent_mail = RealMail::to($request->mailTo)
                                 ->cc($request->mailCc)
-                                ->send(new SendMail($request));
+                                ->send(new SendMail($request,Auth::user()->email));
         }elseif ($request->mailBCC) {
             $sent_mail = RealMail::to($request->mailTo)
                                 ->bcc($request->mailBCC)
-                                ->send(new SendMail($request));
+                                ->send(new SendMail($request,Auth::user()->email));
         } elseif ($request->mailCc && $request->mailBCC) {
             $sent_mail = RealMail::to($request->mailTo)
                                 ->cc($request->mailCc)
                                 ->bcc($request->mailBCC)
-                                ->send(new SendMail($request));
+                                ->send(new SendMail($request,Auth::user()->email));
         } else{
             $sent_mail = RealMail::to($request->mailTo)
-                                ->send(new SendMail($request));
+                                ->send(new SendMail($request,Auth::user()->email));
         }
 
         
         $mail = Mail::create(
         [
+                'mail' => Auth::user()->email,
                 'sender' => Auth::user()->email,
                 'sender_name' => Auth::user()->name,
                 'to' => $request->mailTo,
@@ -284,25 +332,6 @@ var_dump($oMessage->getInReplyTo());
 // Compose Mail
     public function draftMail(Request $request)
     {
-        if ($request->mailCc) {
-            $sent_mail = RealMail::to($request->mailTo)
-                                ->cc($request->mailCc)
-                                ->send(new SendMail($request));
-        }elseif ($request->mailBCC) {
-            $sent_mail = RealMail::to($request->mailTo)
-                                ->bcc($request->mailBCC)
-                                ->send(new SendMail($request));
-        } elseif ($request->mailCc && $request->mailBCC) {
-            $sent_mail = RealMail::to($request->mailTo)
-                                ->cc($request->mailCc)
-                                ->bcc($request->mailBCC)
-                                ->send(new SendMail($request));
-        } else{
-            $sent_mail = RealMail::to($request->mailTo)
-                                ->send(new SendMail($request));
-        }
-
-        
             $mail = Mail::create(
             [
                     'sender' => Auth::user()->email,
@@ -318,6 +347,16 @@ var_dump($oMessage->getInReplyTo());
                     'mailType' => 'drafted',
                     'unread' => false,
                 ]); 
+            if($request->file){
+            foreach ($request->file as $vala) {
+                $attachment = Attachment::create([
+                    'mail_id' => $mail->id,
+                    'attachment_name' => $vala->getClientOriginalName(),
+                    'storage_name' => $vala->hashName()
+                ]);
+                $vala->store('public');
+            }
+        }
             
             return response()->json(['status' => 200]);
         }
@@ -382,5 +421,14 @@ var_dump($oMessage->getInReplyTo());
     public function findMail($id)
     {
         return response()->json(Mail::find($id));
+    }
+
+    public function mailDelete(Request $request)
+    {
+        foreach ($request->mails as $mail) {
+            Mail::find($mail)->update([
+                'deleted' => 1
+            ]);
+        }
     }
 }
